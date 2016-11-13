@@ -1,6 +1,7 @@
 module Text.PropoLogic.Data where
 
 import qualified Data.List as Lst
+import qualified Data.Set as Set    
 
 newtype PLVar = PLVar String
     deriving (Eq,Show,Ord)
@@ -13,85 +14,34 @@ data LogicalExpr = VAR PLVar
              | IF LogicalExpr LogicalExpr
              | IFF LogicalExpr LogicalExpr
 
-toStr (VAR (PLVar s)) = s
-toStr (NOT x) = '~':(show x)
-toStr (OR x y) = "(" ++ (show x) ++ " || "  ++ (show y) ++ ")"
-toStr (AND x y) = "(" ++ (show x) ++ " && "  ++ (show y) ++ ")"
-toStr (IF x y) = "(" ++ (show x) ++ " => "  ++ (show y) ++ ")"
-toStr (IFF x y) = "(" ++ (show x) ++ " <=> "  ++ (show y) ++ ")"
-
-toLiterals e@(VAR _) = [e]
-toLiterals e@(NOT _) = [e]
-toLiterals (OR l1 l2) = toLiterals l1 ++ (toLiterals l2)
-toLiterals (AND l1 l2) = toLiterals l1 ++ (toLiterals l2)
-toLiterals (IF l1 l2) = toLiterals l1 ++ (toLiterals l2)
-toLiterals (IFF l1 l2) = toLiterals l1 ++ (toLiterals l2)
-                  
 instance Show LogicalExpr where
-         show = toStr
+    show (VAR (PLVar s)) = s
+    show (NOT x) = '~':(show x)
+    show (OR x y) = "(" ++ (show x) ++ " || "  ++ (show y) ++ ")"
+    show (AND x y) = "(" ++ (show x) ++ " && "  ++ (show y) ++ ")"
+    show (IF x y) = "(" ++ (show x) ++ " => "  ++ (show y) ++ ")"
+    show (IFF x y) = "(" ++ (show x) ++ " <=> "  ++ (show y) ++ ")"
 
 data CnfLiteral = CnfVar String
                 | CnfNot String
-                deriving Eq
-                  
+                deriving (Eq,Ord)
 
-exprToLiteral (VAR (PLVar x)) = CnfVar x
-exprToLiteral (NOT (VAR (PLVar x))) = CnfNot x
-exprToLiteral x                    = error $ "invalid call to exprToLiteral " ++ (show x)
-                  
 instance Show CnfLiteral where
          show (CnfVar s) = s
          show (CnfNot x) = '~':x
 
-data CnfClause = CnfSimple CnfLiteral
-               | CnfClOr [CnfLiteral]
+data CnfClause = CnfClause (Set.Set CnfLiteral)
 
 instance Eq CnfClause where
-    (CnfSimple x) == (CnfSimple y) = x == y
-    (CnfSimple x) == (CnfClOr xs) = case Lst.nub xs of
-                                      [y] -> x == y
-                                      _  ->  False
-    (CnfClOr ys) == (CnfSimple x) = case Lst.nub ys of
-                                      [y] -> x == y
-                                      otherwise -> False
-    (CnfClOr y1) == (CnfClOr y2) = case (Lst.nub y1) Lst.\\ (Lst.nub y2) of
-                                     [] -> True
-                                     otherwise -> False
-                 
-cnfClause2Literals (CnfSimple x) = [x]
-cnfClause2Literals (CnfClOr xs) = xs
+    (CnfClause s1) == (CnfClause s2) = (Set.isSubsetOf s1 s2) || (Set.isSubsetOf s2 s1)
 
-
-                                
-exprToClause e  = e2c' (toLiterals e)
-    where e2c' [y] = CnfSimple (exprToLiteral y)
-          e2c' ys = CnfClOr . Lst.nub . map exprToLiteral $ ys
-                          
 instance Show CnfClause where
-      show (CnfSimple x) = show x
-      show (CnfClOr xs) = "(" ++ (Lst.intercalate " || " (map show xs)) ++ ")" 
+      show (CnfClause xs) = "(" ++ (Lst.intercalate " || " (map show . Set.toAscList $ xs)) ++ ")"
 
-data Cnf = Cnf1 CnfClause
-          | CnfAnd Cnf Cnf
+newtype Cnf = Cnf [CnfClause]
 
-toClauses (Cnf1 c) = [c]
-toClauses (CnfAnd c1 c2) = Lst.nub $ toClauses c1 ++ (toClauses c2)
-
-cnfToLiteral (Cnf1 c) = cnfClause2Literals c
-cnfToLiteral (CnfAnd c1 c2) = cnfToLiteral c1 ++ (cnfToLiteral c2)
-
-                              
-exprToCnf e@(VAR _) = Cnf1 (exprToClause e)
-exprToCnf e@(NOT _) = Cnf1 (exprToClause e)
-exprToCnf e@(OR _ _) = Cnf1 (exprToClause e)
-exprToCnf (AND l r)  = CnfAnd (exprToCnf l) (exprToCnf r)
-exprToCnf e          = error $ "invalid call to convert to cnf " ++ (show e)
-
-                       
-                          
 instance Show Cnf where
-         show (Cnf1 cs) = show cs
-         show (CnfAnd c1 c2) = Lst.intercalate " && " . map show  $ (toClauses c1) ++ (toClauses c2)
+         show (Cnf cs) = Lst.intercalate " && " . map show  $ cs
 
 isNnf :: LogicalExpr -> Bool
 isNnf (VAR _) = True
@@ -122,3 +72,18 @@ nnfImplFreeToCnf expr = if isNnf expr && (isImplFree expr)
           distr e1 (AND l r) = AND (distr e1 l) (distr e1 r)
           distr e1 e2 = OR e1 e2
 
+          exprToCnf (VAR (PLVar x)) = Cnf [CnfClause . Set.singleton $ CnfVar x]
+          exprToCnf (NOT (VAR (PLVar x))) = Cnf [CnfClause . Set.singleton $ CnfVar x]
+          exprToCnf e@(OR _ _) = Cnf [(exprToClause e)]
+          exprToCnf (AND l r)  = case (exprToCnf l, exprToCnf r) of
+                         (Cnf left, Cnf right) -> Cnf . Lst.nub $ (left ++ right)
+          exprToCnf e          = error $ "invalid call to convert to cnf " ++ (show e)
+
+          exprToClause e  = CnfClause . Set.fromList $ toLiterals e
+
+          toLiterals (VAR (PLVar x)) = [CnfVar x]
+          toLiterals (NOT (VAR (PLVar x))) = [CnfNot x]
+          toLiterals (OR l1 l2) = toLiterals l1 ++ (toLiterals l2)
+          toLiterals (AND l1 l2) = toLiterals l1 ++ (toLiterals l2)
+          toLiterals (IF l1 l2) = toLiterals l1 ++ (toLiterals l2)
+          toLiterals (IFF l1 l2) = toLiterals l1 ++ (toLiterals l2)
