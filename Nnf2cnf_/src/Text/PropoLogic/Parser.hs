@@ -2,19 +2,20 @@ module Text.PropoLogic.Parser where
 
 import Text.PropoLogic.Data
 import Text.Megaparsec
-import qualified Text.Megaparsec.Char.Lexer as L
+import qualified Text.Megaparsec.Lexer as L
 import Data.Functor.Identity    
 import Control.Monad.Combinators.Expr     
-import Data.Void
-import Text.Megaparsec.Char
+implFreeNnfToCnf = undefined
 
-
-type Parser = Parsec Void  String                   
+type Parser = Parsec Dec String                   
 
 --skipSpace :: Parser ()    
+skipSpace = do
+  c <- spaceChar
+  return ()
 
 --spaceConsumer :: Parser ()         
-spaceConsumer = L.space space1 (L.skipLineComment "//") (L.skipBlockComment "/*" "*/")                   
+spaceConsumer = L.space skipSpace (L.skipLineComment "//") (L.skipBlockComment "/*" "*/")                   
 
 lexeme = L.lexeme spaceConsumer
 symbol = L.symbol spaceConsumer
@@ -65,7 +66,7 @@ parseFile :: FilePath -> IO ()
 parseFile f = do
           txt <- readFile f
           case parse rawExpr f txt of
-               Left err   -> putStr (errorBundlePretty err)
+               Left err   -> putStr (parseErrorPretty err)
                Right expr -> case nnfImplFreeToCnf expr of
                                Nothing -> putStrLn "Is not NNF or Impl free"
                                Just r  -> print r
